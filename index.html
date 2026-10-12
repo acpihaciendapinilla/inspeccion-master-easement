@@ -78,6 +78,18 @@ textarea{min-height:76px;resize:vertical}
 .pill.na{background:var(--na-bg);color:var(--na)}
 .pill.prog{background:var(--olive-soft);color:var(--olive-dark)}
 
+/* Tarjetas de sitios */
+.sites{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.scard{text-align:left;min-height:96px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg);color:var(--ink);padding:12px;display:flex;flex-direction:column;justify-content:space-between;gap:8px}
+.scard strong{font-size:16px;line-height:1.2}
+.scard .pill{font-size:12px}
+.scard[aria-pressed=true]{border:2px solid var(--olive-dark);background:var(--olive-soft);padding:11px}
+.scard.done{background:var(--olive-soft);border-color:var(--olive)}
+.scard .sel{width:22px;height:22px;border-radius:6px;border:2px solid var(--line);display:grid;place-items:center;color:#fff;font-size:13px;align-self:flex-end}
+.scard[aria-pressed=true] .sel{background:var(--olive-dark);border-color:var(--olive-dark)}
+.sites-tools{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.link{border:0;background:none;color:var(--olive-dark);font-weight:600;padding:6px 0;font-size:15px}
+
 /* Sitio */
 .site-head{display:flex;flex-direction:column;gap:6px;padding-block:6px 14px}
 .site-head h2{font-family:var(--display);font-size:30px;font-weight:600;line-height:1.1}
@@ -243,11 +255,14 @@ const fechaLarga = f => { const [y,m,d]=f.split("-").map(Number); return new Dat
 const fechaCorta = f => { const [y,m,d]=f.split("-"); return d+"/"+m+"/"+y; };
 const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
-function nuevoRecorrido(inspector){
+function nuevoRecorrido(inspector, seleccion){
   const sitios = {};
   SITIOS.forEach(s => { sitios[s.id] = {inicio:null, fin:null, confirmado:false, items:{}}; });
-  return {id:"r"+Date.now(), inspector, fecha:hoyISO(), creado:new Date().toISOString(), sitios, ejemplo:EJEMPLO};
+  return {id:"r"+Date.now(), inspector, fecha:hoyISO(), creado:new Date().toISOString(), sitios, seleccion, ejemplo:EJEMPLO};
 }
+// Sitios que se eligieron para el recorrido de ese día
+const sitiosDe = rec => SITIOS.filter(s => !rec.seleccion || rec.seleccion.includes(s.id));
+const sitiosDelDia = () => sitiosDe(R);
 function itemCompleto(d){
   if(!d || !d.estado) return false;
   if(NECESITA_EVIDENCIA(d.estado)) return (d.comentario||"").trim().length>0 && (d.fotos||[]).length>0;
@@ -260,16 +275,16 @@ function avanceSitio(s){
 }
 function conteos(rec){
   const c = {bueno:0,malo:0,urgente:0,na:0,total:0};
-  SITIOS.forEach(s => s.items.forEach(it => { const d=rec.sitios[s.id]?.items[it.id]; if(d&&d.estado){c[d.estado]++; c.total++;} }));
+  sitiosDe(rec).forEach(s => s.items.forEach(it => { const d=rec.sitios[s.id]?.items[it.id]; if(d&&d.estado){c[d.estado]++; c.total++;} }));
   return c;
 }
 function inicioFin(rec){
-  const ini = SITIOS.map(s=>rec.sitios[s.id]?.inicio).filter(Boolean).sort()[0]||null;
-  const fin = SITIOS.map(s=>rec.sitios[s.id]?.fin).filter(Boolean).sort().pop()||null;
+  const ini = sitiosDe(rec).map(s=>rec.sitios[s.id]?.inicio).filter(Boolean).sort()[0]||null;
+  const fin = sitiosDe(rec).map(s=>rec.sitios[s.id]?.fin).filter(Boolean).sort().pop()||null;
   return {ini,fin};
 }
-const sitiosConfirmados = () => SITIOS.filter(s=>R.sitios[s.id].confirmado).length;
-const siguienteSitio = () => SITIOS.find(s=>!R.sitios[s.id].confirmado);
+const sitiosConfirmados = () => sitiosDelDia().filter(s=>R.sitios[s.id].confirmado).length;
+const pendientes = () => sitiosDelDia().filter(s=>!R.sitios[s.id].confirmado);
 
 /* ===================== Interfaz ===================== */
 const $app = document.getElementById("app");
@@ -306,11 +321,10 @@ function vHome(){
   setTop(null); setFoot(null);
   let resume = "";
   if(R){
-    const sig = siguienteSitio();
     resume = `<div class="resume">
       <span class="eyebrow">Recorrido en curso</span>
       <strong>${esc(R.inspector)} · ${fechaCorta(R.fecha)}</strong>
-      <span class="muted">${sitiosConfirmados()} de ${SITIOS.length} sitios terminados${sig?` · sigue ${esc(sig.nombre)}`:""}</span>
+      <span class="muted">${sitiosConfirmados()} de ${sitiosDelDia().length} sitios terminados</span>
     </div>`;
   }
   $app.innerHTML = `<section class="home">
@@ -325,7 +339,7 @@ function vHome(){
     ${EJEMPLO?`<p class="note-example">Versión de prueba: los ítems de cada sitio son de ejemplo y se van a reemplazar por la lista real de la ruta.</p>`:""}
   </section>`;
   const bi=document.getElementById("bIni"); if(bi) bi.onclick=()=>go({name:"start"});
-  const bc=document.getElementById("bCont"); if(bc) bc.onclick=()=>go(R && sitiosConfirmados()===SITIOS.length?{name:"final"}:{name:"route"});
+  const bc=document.getElementById("bCont"); if(bc) bc.onclick=()=>go(R && !pendientes().length?{name:"final"}:{name:"route"});
   document.getElementById("bHist").onclick=()=>go({name:"hist"});
 }
 
@@ -339,40 +353,50 @@ function vStart(){
       <input id="insp" type="text" autocomplete="name" value="${esc(last)}" placeholder="Nombre y apellido">
     </label>
     <div class="note-example">Fecha: <strong>${fechaLarga(hoyISO())}</strong>. Se registra sola, igual que la hora de inicio y fin de cada sitio.</div>
-    <div class="note-example">Ruta: ${SITIOS.map(s=>esc(s.nombre)).join(" → ")}</div>
+    <div class="sites-tools"><strong>¿Qué sitios vas a revisar hoy?</strong><button class="link" id="bTodos" type="button">Elegir todos</button></div>
+    <div class="sites" id="selSitios">${SITIOS.map(s=>`<button type="button" class="scard" aria-pressed="false" data-sel="${s.id}">
+      <strong>${esc(s.nombre)}</strong><span class="muted" style="font-size:13px">${s.items.length} ítems</span><span class="sel" aria-hidden="true"></span></button>`).join("")}</div>
   </section>`;
-  setFoot(`<button class="btn" id="bGo" type="button">Comenzar recorrido</button>`);
+  setFoot(`<span class="foot-note" id="selNote"></span><button class="btn" id="bGo" type="button">Comenzar recorrido</button>`);
   const inp=document.getElementById("insp");
   const btn=document.getElementById("bGo");
-  const upd=()=>btn.disabled=!inp.value.trim(); upd(); inp.oninput=upd;
+  const sel=new Set();
+  const upd=()=>{
+    $app.querySelectorAll("[data-sel]").forEach(b=>{ const on=sel.has(b.dataset.sel); b.setAttribute("aria-pressed",on); b.querySelector(".sel").textContent=on?"✓":""; });
+    document.getElementById("bTodos").textContent = sel.size===SITIOS.length ? "Quitar todos" : "Elegir todos";
+    document.getElementById("selNote").textContent = sel.size ? `${sel.size} ${sel.size===1?"sitio elegido":"sitios elegidos"}` : "Elige al menos un sitio";
+    btn.disabled=!inp.value.trim() || !sel.size;
+  };
+  $app.querySelectorAll("[data-sel]").forEach(b=>b.onclick=()=>{ sel.has(b.dataset.sel)?sel.delete(b.dataset.sel):sel.add(b.dataset.sel); upd(); });
+  document.getElementById("bTodos").onclick=()=>{ if(sel.size===SITIOS.length) sel.clear(); else SITIOS.forEach(s=>sel.add(s.id)); upd(); };
+  upd(); inp.oninput=upd;
   btn.onclick=()=>{
-    const n=inp.value.trim(); if(!n) return;
-    LS.set("inspector",n); R=nuevoRecorrido(n); guardar(); go({name:"route"});
+    const n=inp.value.trim(); if(!n || !sel.size) return;
+    LS.set("inspector",n); R=nuevoRecorrido(n, SITIOS.filter(s=>sel.has(s.id)).map(s=>s.id)); guardar(); go({name:"route"});
   };
 }
 
 /* ---------- Ruta ---------- */
 function vRoute(){
-  setTop("Ruta del día", ()=>go({name:"home"}));
-  const done=sitiosConfirmados(); const sig=siguienteSitio();
-  const totalItems = SITIOS.reduce((a,s)=>a+s.items.length,0);
-  const itemsHechos = SITIOS.reduce((a,s)=>a+avanceSitio(s).hechos,0);
+  setTop("Sitios de hoy", ()=>go({name:"home"}));
+  const dia=sitiosDelDia(); const done=sitiosConfirmados();
+  const totalItems = dia.reduce((a,s)=>a+s.items.length,0);
+  const itemsHechos = dia.reduce((a,s)=>a+avanceSitio(s).hechos,0);
   const pct = Math.round(itemsHechos/totalItems*100);
   $app.innerHTML = `<section class="summary">
       <p class="eyebrow">${esc(R.inspector)} · ${fechaCorta(R.fecha)}</p>
-      <div style="display:flex;justify-content:space-between;align-items:baseline"><strong style="font-size:18px">${done} de ${SITIOS.length} sitios terminados</strong><span class="muted tnum">${pct}%</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><strong style="font-size:18px">${done} de ${dia.length} sitios terminados</strong><span class="muted tnum">${pct}%</span></div>
       <div class="bar"><i style="width:${pct}%"></i></div>
+      <span class="muted" style="font-size:14px">Toca el sitio que quieras revisar, en el orden que te convenga.</span>
     </section>
-    <ol class="route">${SITIOS.map((s,i)=>{
+    <div class="sites">${dia.map(s=>{
       const st=R.sitios[s.id]; const a=avanceSitio(s);
-      const cls = st.confirmado?"done":(sig&&sig.id===s.id?"cur":"");
       let estado;
-      if(st.confirmado) estado=`<span class="pill ok">Terminado · <span class="tnum">${hora(st.inicio)} – ${hora(st.fin)}</span></span>`;
-      else if(a.hechos>0) estado=`<span class="pill prog tnum">${a.hechos} de ${a.n} ítems · inició ${hora(st.inicio)}</span>`;
-      else estado=`<span class="muted" style="font-size:14px">${a.n} ítems</span>`;
-      return `<li class="stop ${cls}"><div class="rail"><span class="dot">${st.confirmado?"✓":i+1}</span></div>
-        <button class="stop-btn" type="button" data-s="${s.id}"><strong>${esc(s.nombre)}</strong>${estado}</button></li>`;
-    }).join("")}</ol>
+      if(st.confirmado) estado=`<span class="pill ok tnum">✓ ${hora(st.inicio)} – ${hora(st.fin)}</span>`;
+      else if(a.hechos>0) estado=`<span class="pill prog tnum">${a.hechos} de ${a.n} ítems</span>`;
+      else estado=`<span class="muted" style="font-size:13px">${a.n} ítems · pendiente</span>`;
+      return `<button class="scard ${st.confirmado?"done":""}" type="button" data-s="${s.id}"><strong>${esc(s.nombre)}</strong>${estado}</button>`;
+    }).join("")}</div>
     <div id="discard" style="padding-top:8px"><button class="btn ghost" id="bDisc" type="button">Descartar este recorrido</button></div>`;
   $app.querySelectorAll("[data-s]").forEach(b=>b.onclick=()=>go({name:"site",id:b.dataset.s}));
   document.getElementById("bDisc").onclick=()=>{
@@ -381,9 +405,9 @@ function vRoute(){
     document.getElementById("dNo").onclick=()=>vRoute();
     document.getElementById("dYes").onclick=async()=>{ R=null; await DB.del("actual"); go({name:"home"}); toast("Recorrido descartado"); };
   };
-  setFoot(sig?`<button class="btn" id="bSig" type="button">Ir a ${esc(sig.nombre)}</button>`:`<button class="btn" id="bFin" type="button">Ver resumen final</button>`);
-  if(sig) document.getElementById("bSig").onclick=()=>go({name:"site",id:sig.id});
-  else document.getElementById("bFin").onclick=()=>go({name:"final"});
+  const faltan=pendientes().length;
+  setFoot(faltan?null:`<button class="btn" id="bFin" type="button">Ver resumen final</button>`);
+  if(!faltan) document.getElementById("bFin").onclick=()=>go({name:"final"});
 }
 
 /* ---------- Sitio ---------- */
@@ -421,9 +445,8 @@ function vSite(id){
   const s=SITIOS.find(x=>x.id===id); const st=R.sitios[id];
   setTop(s.nombre, ()=>go({name:"route"}));
   if(st.confirmado) return vSiteLocked(s);
-  const a=avanceSitio(s);
   $app.innerHTML = `<section class="site-head">
-      <p class="eyebrow">Sitio ${SITIOS.indexOf(s)+1} de ${SITIOS.length}</p>
+      <p class="eyebrow">Inspección del sitio</p>
       <h2>${esc(s.nombre)}</h2>
       <span class="muted tnum" id="siteMeta">${metaSitio(s)}</span>
     </section>
@@ -486,21 +509,20 @@ function bindSite(s){
 function confirmarSitio(s){
   const st=R.sitios[s.id]; st.fin=new Date().toISOString(); if(!st.inicio) st.inicio=st.fin; st.confirmado=true;
   guardar();
-  if(sitiosConfirmados()===SITIOS.length){ cerrarRecorrido(); go({name:"final"}); }
+  if(!pendientes().length){ cerrarRecorrido(); go({name:"final"}); }
   else { toast(`${s.nombre} terminado`); go({name:"route"}); }
 }
 function vSiteLocked(s){
   const st=R.sitios[s.id];
-  $app.innerHTML = `<section class="site-head"><p class="eyebrow">Sitio ${SITIOS.indexOf(s)+1} de ${SITIOS.length}</p><h2>${esc(s.nombre)}</h2></section>
+  $app.innerHTML = `<section class="site-head"><p class="eyebrow">Inspección del sitio</p><h2>${esc(s.nombre)}</h2></section>
     <div class="locked">✓ Terminado y bloqueado · <span class="tnum">${hora(st.inicio)} – ${hora(st.fin)}</span></div>
     ${s.items.map(it=>{ const d=st.items[it.id]||{}; const e=ESTADOS[d.estado]||ESTADOS.na;
       return `<div class="ro"><div class="item-sub">${esc(it.cat)} · ${esc(it.sub)}</div>
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><strong>${esc(it.nombre)}</strong><span class="pill ${e.cls}">${e.txt}</span></div>
         ${d.comentario?`<span class="muted">${esc(d.comentario)}</span>`:""}
         ${(d.fotos||[]).length?`<div class="photos">${d.fotos.map(f=>`<div class="ph"><img src="${f.src}" alt=""></div>`).join("")}</div>`:""}</div>`;}).join("")}`;
-  const sig=siguienteSitio();
-  setFoot(sig?`<button class="btn" id="bSig" type="button">Ir a ${esc(sig.nombre)}</button>`:null);
-  if(sig) document.getElementById("bSig").onclick=()=>go({name:"site",id:sig.id});
+  setFoot(`<button class="btn sec" id="bVolver" type="button">Volver a los sitios</button>`);
+  document.getElementById("bVolver").onclick=()=>go({name:"route"});
 }
 
 /* ---------- Fotos: reducir tamaño antes de guardar ---------- */
@@ -537,7 +559,7 @@ function vFinal(){
   $app.innerHTML = `<section class="final">
     <div class="seal" aria-hidden="true">✓</div>
     <div><p class="eyebrow">${fechaLarga(R.fecha)}</p><h2>Inspecciones terminadas por hoy</h2></div>
-    <p class="muted" style="margin:0">${esc(R.inspector)} revisó ${SITIOS.length} sitios y ${c.total} ítems.</p>
+    <p class="muted" style="margin:0">${esc(R.inspector)} revisó ${sitiosDelDia().length} ${sitiosDelDia().length===1?"sitio":"sitios"} y ${c.total} ítems.</p>
     <div class="times tnum"><span>Inicio <strong>${hora(t.ini)}</strong></span><span>Fin <strong>${hora(t.fin)}</strong></span></div>
     <div class="stats tnum">
       <div><b style="color:var(--ok)">${c.bueno}</b><span>Bueno</span></div>
@@ -606,7 +628,7 @@ function construirPDF(rec){
   doc.setFontSize(9); doc.setTextColor(...INK); let x=M+2;
   cols.forEach(([h,w])=>{ doc.text(h,x,y+4.8); x+=w; }); y+=7;
   doc.setFont("helvetica","normal");
-  SITIOS.forEach(s=>{
+  sitiosDe(rec).forEach(s=>{
     const st=rec.sitios[s.id]; const k={bueno:0,malo:0,urgente:0,na:0};
     s.items.forEach(it=>{ const d=st.items[it.id]; if(d&&d.estado) k[d.estado]++; });
     const row=[s.nombre,hora(st.inicio),hora(st.fin),k.bueno,k.malo,k.urgente,k.na];
@@ -618,7 +640,7 @@ function construirPDF(rec){
   y+=12;
 
   // Detalle
-  SITIOS.forEach(s=>{
+  sitiosDe(rec).forEach(s=>{
     const st=rec.sitios[s.id];
     espacio(22);
     doc.setFillColor(...OLIVE); doc.rect(M,y,CW,9,"F");
