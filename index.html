@@ -353,32 +353,20 @@ function vStart(){
       <input id="insp" type="text" autocomplete="name" value="${esc(last)}" placeholder="Nombre y apellido">
     </label>
     <div class="note-example">Fecha: <strong>${fechaLarga(hoyISO())}</strong>. Se registra sola, igual que la hora de inicio y fin de cada sitio.</div>
-    <div class="sites-tools"><strong>¿Qué sitios vas a revisar hoy?</strong><button class="link" id="bTodos" type="button">Elegir todos</button></div>
-    <div class="sites" id="selSitios">${SITIOS.map(s=>`<button type="button" class="scard" aria-pressed="false" data-sel="${s.id}">
-      <strong>${esc(s.nombre)}</strong><span class="muted" style="font-size:13px">${s.items.length} ítems</span><span class="sel" aria-hidden="true"></span></button>`).join("")}</div>
   </section>`;
-  setFoot(`<span class="foot-note" id="selNote"></span><button class="btn" id="bGo" type="button">Comenzar recorrido</button>`);
+  setFoot(`<button class="btn" id="bGo" type="button">Comenzar recorrido</button>`);
   const inp=document.getElementById("insp");
   const btn=document.getElementById("bGo");
-  const sel=new Set();
-  const upd=()=>{
-    $app.querySelectorAll("[data-sel]").forEach(b=>{ const on=sel.has(b.dataset.sel); b.setAttribute("aria-pressed",on); b.querySelector(".sel").textContent=on?"✓":""; });
-    document.getElementById("bTodos").textContent = sel.size===SITIOS.length ? "Quitar todos" : "Elegir todos";
-    document.getElementById("selNote").textContent = sel.size ? `${sel.size} ${sel.size===1?"sitio elegido":"sitios elegidos"}` : "Elige al menos un sitio";
-    btn.disabled=!inp.value.trim() || !sel.size;
-  };
-  $app.querySelectorAll("[data-sel]").forEach(b=>b.onclick=()=>{ sel.has(b.dataset.sel)?sel.delete(b.dataset.sel):sel.add(b.dataset.sel); upd(); });
-  document.getElementById("bTodos").onclick=()=>{ if(sel.size===SITIOS.length) sel.clear(); else SITIOS.forEach(s=>sel.add(s.id)); upd(); };
-  upd(); inp.oninput=upd;
+  const upd=()=>btn.disabled=!inp.value.trim(); upd(); inp.oninput=upd;
   btn.onclick=()=>{
-    const n=inp.value.trim(); if(!n || !sel.size) return;
-    LS.set("inspector",n); R=nuevoRecorrido(n, SITIOS.filter(s=>sel.has(s.id)).map(s=>s.id)); guardar(); go({name:"route"});
+    const n=inp.value.trim(); if(!n) return;
+    LS.set("inspector",n); R=nuevoRecorrido(n); guardar(); go({name:"route"});
   };
 }
 
 /* ---------- Ruta ---------- */
 function vRoute(){
-  setTop("Sitios de hoy", ()=>go({name:"home"}));
+  setTop("Lugares", ()=>go({name:"home"}));
   const dia=sitiosDelDia(); const done=sitiosConfirmados();
   const totalItems = dia.reduce((a,s)=>a+s.items.length,0);
   const itemsHechos = dia.reduce((a,s)=>a+avanceSitio(s).hechos,0);
